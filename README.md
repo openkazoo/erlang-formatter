@@ -18,6 +18,20 @@ Then just call your plugin directly in an existing application:
 $ rebar3 fmt
 ```
 
+Source file types can be configured using `rebar.config`:
+
+```erlang
+{fmt, [
+    {file_types, [
+        "erl",
+        "escript",
+        "hrl"
+    ]}
+]}.
+```
+
+Values in `file_types` must be valid regex and escaped, as necessary.
+
 ## Using `make`
 
 ```make

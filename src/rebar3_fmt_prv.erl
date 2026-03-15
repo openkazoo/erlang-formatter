@@ -5,6 +5,18 @@
 
 -define(PROVIDER, fmt).
 -define(DEPS, [app_discovery]).
+-define(DEFAULT_FILE_TYPES,
+        ["app"
+        ,"app\\.src"
+        ,"app\\.src\\.script"
+        ,"config"
+        ,"config\\.script"
+        ,"erl"
+        ,"escript"
+        ,"hrl"
+        ,"xrl"
+        ,"yrl"
+        ]).
 
 %% ===================================================================
 %% Public API
@@ -38,7 +50,8 @@ do(State) ->
         false -> {error, "Could not find `emacs`"};
         Exe ->
             Apps = rebar_state:project_apps(State),
-            case do_fmt(Exe, Apps) of
+            Pattern = file_types_pattern(State),
+            case do_fmt(Exe, Apps, Pattern) of
                 ok -> {ok, State};
                 {error,_}=E -> E
             end
@@ -49,29 +62,31 @@ format_error(Reason) ->
     io_lib:format("~p", [Reason]).
 
 
-do_fmt(_, []) -> ok;
-do_fmt(Exe, [App|Apps]) ->
+do_fmt(_, [], _) -> ok;
+do_fmt(Exe, [App|Apps], Pattern) ->
     Path = rebar_app_info:dir(App),
-    Paths = find_source_files(Path),
+    Paths = find_source_files(Path, Pattern),
     rebar_api:debug("found ~p files: ~p", [length(Paths), Paths]),
     case fmt(Exe, Paths) of
-        ok -> do_fmt(Exe, Apps);
+        ok -> do_fmt(Exe, Apps, Pattern);
         {error,_}=E -> E
     end.
 
-find_source_files(Path) ->
-    Pattern =
-        ".*\\.(" "app"
-        "|" "app\\.src"
-        "|" "app\\.src\\.script"
-        "|" "config"
-        "|" "config\\.script"
-        "|" "erl"
-        "|" "escript"
-        "|" "hrl"
-        "|" "xrl"
-        "|" "yrl"
-        ")$",
+file_types_pattern(State) ->
+    FileTypes = file_types(State),
+    ".*\\.("
+        ++ string:join(FileTypes, "|")
+        ++ ")$".
+
+file_types(State) ->
+    case rebar_state:get(State, fmt, []) of
+        Options when is_list(Options) ->
+            proplists:get_value('file_types', Options, ?DEFAULT_FILE_TYPES);
+        _ ->
+            ?DEFAULT_FILE_TYPES
+    end.
+
+find_source_files(Path, Pattern) ->
     rebar_api:debug("looking for files matching: '~s'", [Pattern]),
     filelib:fold_files(Path, Pattern, true, fun maybe_cons/2, []).
 
