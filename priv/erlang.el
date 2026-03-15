@@ -5155,6 +5155,7 @@ about Erlang modules."
 
 (when (and (erlang-soft-require 'xref)
            (erlang-soft-require 'cl-generic)
+           (erlang-soft-require 'cl-lib)
            (erlang-soft-require 'eieio)
            (erlang-soft-require 'etags))
   ;; The purpose of using eval here is to avoid compilation
@@ -5183,10 +5184,17 @@ about Erlang modules."
         (let ((erlang-replace-etags-tags-completion-table t))
           (tags-completion-table)))
 
-      (defclass erlang-xref-location (xref-file-location)
-        ((arity :type fixnum :initarg :arity
-                :reader erlang-xref-location-arity))
-        :documentation "An erlang location is a file location plus arity.")
+      (if (find-class 'xref-file-location)
+          (progn
+            (defclass erlang-xref-location (xref-file-location)
+              ((arity :type fixnum :initarg :arity
+                      :reader erlang-xref-location-arity))
+              :documentation "An erlang location is a file location plus arity.")
+            (defalias 'make-erlang-xref-location 'erlang-xref-location))
+        (cl-defstruct (erlang-xref-location
+                       (:include xref-file-location))
+          "An erlang location is a file location plus arity."
+          (arity 0 :type fixnum)))
 
       ;; This method definition only calls the superclass which is
       ;; the default behaviour if it was not defined.  It is only
@@ -5349,13 +5357,12 @@ is non-nil then TAG is a regexp."
       xrefs
     (when (and xrefs
                (fboundp 'xref-item-location)
-               (fboundp 'xref-location-group)
-               (fboundp 'slot-value))
+               (fboundp 'xref-location-group))
       (let (files)
         (cl-loop for xref in xrefs
                  for loc = (xref-item-location xref)
                  for file = (xref-location-group loc)
-                 do (pushnew file files :test 'string-equal))
+                 do (cl-pushnew file files :test 'string-equal))
         (or (cl-loop for file in files
                      append (erlang-xrefs-in-file file kind tag is-regexp))
             ;; Failed for some reason.  Pretend like it is raining and
@@ -5375,7 +5382,8 @@ is non-nil then TAG is a regexp."
            t))))
 
 (defun erlang-xrefs-in-file (file kind tag is-regexp)
-  (when (fboundp 'make-instance)
+  (when (and (fboundp 'make-erlang-xref-location)
+             (fboundp 'xref-make))
     (with-current-buffer (find-file-noselect file)
       (save-excursion
         (goto-char (point-min))
@@ -5387,17 +5395,15 @@ is non-nil then TAG is a regexp."
                    for name = (match-string-no-properties 1)
                    for arity = (save-excursion
                                  (erlang-get-arity))
-                   for loc = (make-instance 'erlang-xref-location
-                                            :file file
-                                            :line (line-number-at-pos)
-                                            :column 0
-                                            :arity arity)
+                   for loc = (make-erlang-xref-location
+                              :file file
+                              :line (line-number-at-pos)
+                              :column 0
+                              :arity arity)
                    for sum = (erlang-xref-summary kind name arity)
                    when (and arity
                              (not (eq arity last-arity)))
-                   collect (make-instance 'xref-item
-                                          :summary sum
-                                          :location loc)
+                   collect (xref-make sum loc)
                    do (setq last-arity arity)))))))
 
 (defun erlang-xref-summary (kind tag arity)
